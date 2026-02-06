@@ -1,0 +1,5 @@
+pix2tex
+pdf2image
+numpy
+opencv-python-headless
+lxml

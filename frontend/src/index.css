@@ -1,0 +1,54 @@
+:root {
+  color-scheme: light;
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  --bg-primary: #eaf3ff;
+  --bg-accent: #f6fbff;
+  --ink-strong: #0b1b2b;
+  --ink-soft: #3f546b;
+  --accent: #2f6bff;
+  --accent-dark: #1f53cc;
+  --panel: #ffffff;
+  --panel-border: #d7e6f7;
+  --shadow: 0 24px 60px rgba(30, 69, 120, 0.12);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  color: var(--ink-strong);
+  background: radial-gradient(circle at top left, #dbeaff 0%, transparent 55%),
+    radial-gradient(circle at 20% 50%, #eef6ff 0%, transparent 55%),
+    linear-gradient(120deg, var(--bg-primary), var(--bg-accent));
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+code {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

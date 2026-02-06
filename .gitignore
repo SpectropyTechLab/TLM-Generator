@@ -1,0 +1,15 @@
+/backend/.env
+/frontend/.env
+/backend/node_modules
+/frontend/node_modules
+/backend/tmp_pdf_compare
+/backend/tmp
+/backend/uploads
+/frontend/dist
+/frontend/build
+/.vscode
+/.idea
+.DS_Store
+*.log
+.env
+.env.*

@@ -1,0 +1,67 @@
+services:
+  - type: web
+    name: paper2manual-backend
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: INPUT_BUCKET
+        sync: false
+      - key: OUTPUT_BUCKET
+        sync: false
+      - key: AUTH_SECRET
+        sync: false
+      - key: USERS_TABLE
+        value: users
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o
+      - key: OPENAI_FALLBACK
+        value: "false"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
+      - key: GEMINI_FALLBACK
+        value: "false"
+      - key: GEMINI_FALLBACK_MODELS
+        value: gemini-1.5-flash-latest,gemini-2.5-flash
+      - key: GEMINI_MAX_OUTPUT_TOKENS
+        value: "8192"
+      - key: WORKSHEET_CHUNK_SIZE
+        value: "2"
+      - key: WORKSHEET_MAX_CHUNK_DEPTH
+        value: "2"
+      - key: LATEX_USE_LOCAL
+        value: "true"
+      - key: PANDOC_BIN
+        value: /usr/bin/pandoc
+      - key: PDFLATEX_BIN
+        value: /usr/bin/pdflatex
+      - key: PIX2TEX_PY
+        value: /usr/bin/python3
+      - key: OMML_PY
+        value: /usr/bin/python3
+      - key: PIX2TEX_POPPLER_PATH
+        value: /usr/bin
+      - key: PIX2TEX_MAX_PAGES
+        value: "5"
+      - key: PIX2TEX_DPI
+        value: "200"
+      - key: PIX2TEX_MIN_AREA_RATIO
+        value: "0.002"
+      - key: PIX2TEX_MAX_REGIONS
+        value: "20"
+      - key: PIX2TEX_PAD_PX
+        value: "6"
