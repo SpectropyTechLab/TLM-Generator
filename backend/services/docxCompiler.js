@@ -56,6 +56,16 @@ function sanitizeLatexForPandoc(latexContent) {
     .replace(/\u0394/g, '\\Delta ')
     .replace(/\u03A9/g, '\\Omega ');
 
+  // Remove stray HTML markers and braces that can break Pandoc's LaTeX reader.
+  text = text
+    .replace(/^\s*\{=html\}\s*$/gm, '')
+    .replace(/^\s*<!--\s*-->\s*$/gm, '')
+    // Remove stray leading braces on their own or before list markers.
+    .replace(/^\s*}\s*(?=[a-d]\))/gm, '')
+    .replace(/^\s*}\s*(?=\d+[\.\)]\s)/gm, '')
+    .replace(/^\s*}\s*/gm, '')
+    .replace(/\\textbackslash\{\}/g, '\\textbackslash{}');
+
   return text;
 }
 

@@ -132,7 +132,7 @@ ${body}
    * @private
    */
   static convertTextToLatex(content) {
-    let text = (content || '').trim();
+    let text = this.sanitizeSourceText(content);
     // Normalize common malformed math delimiters like "$$ $x ...$" -> "$$ x ... $$"
     // This prevents "Display math should end with $$" errors from mixed delimiters.
     text = text.replace(/\$\$\s*\$([\s\S]*?)\$/g, '$$ $1 $$');
@@ -237,6 +237,27 @@ ${body}
     }
 
     return output.join('\n\n');
+  }
+
+  /**
+   * Normalize raw model output before LaTeX conversion.
+   * @private
+   */
+  static sanitizeSourceText(content) {
+    if (!content) return '';
+    return String(content)
+      .trim()
+      // Strip markdown/HTML artifacts.
+      .replace(/^\s*\{=html\}\s*$/gm, '')
+      .replace(/^\s*<!--\s*-->\s*$/gm, '')
+      .replace(/^\s*>\s?/gm, '')
+      // Drop markdown images and tables which are not valid LaTeX.
+      .replace(/^!\[.*?\]\(.*?\)\s*(\{.*?\})?\s*$/gm, '')
+      .replace(/^\s*\|[-\s|:]+\|\s*$/gm, '')
+      // Remove stray line-ending backslashes used for markdown line breaks.
+      .replace(/\\\s*$/gm, '')
+      // Normalize escaped quotes from model output.
+      .replace(/\\"/g, '"');
   }
 
   /**
