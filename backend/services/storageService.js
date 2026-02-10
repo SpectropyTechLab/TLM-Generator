@@ -14,30 +14,42 @@ class StorageService {
   static async uploadFile(bucket, filePath, fileBuffer, fileType) {
     try {
       const contentType = getContentType(fileType);
+      const maxAttempts = Number(process.env.STORAGE_UPLOAD_RETRIES || 3);
+      const baseDelayMs = Number(process.env.STORAGE_UPLOAD_RETRY_MS || 500);
 
-      const { data, error } = await supabase
-        .storage
-        .from(bucket)
-        .upload(filePath, fileBuffer, {
-          contentType: contentType,
-          upsert: true
-        });
+      let lastError;
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const { data, error } = await supabase
+          .storage
+          .from(bucket)
+          .upload(filePath, fileBuffer, {
+            contentType: contentType,
+            upsert: true
+          });
 
-      if (error) {
-        console.error('Storage upload error:', error);
-        throw new Error(`Upload failed: ${error.message}`);
+        if (!error) {
+          const { data: { publicUrl } } = supabase
+            .storage
+            .from(bucket)
+            .getPublicUrl(filePath);
+
+          return {
+            path: filePath,
+            url: publicUrl
+          };
+        }
+
+        lastError = error;
+        console.error(`Storage upload error (attempt ${attempt}/${maxAttempts}):`, error);
+        if (!isRetryableStorageError(error) || attempt === maxAttempts) {
+          throw new Error(`Upload failed: ${error.message}`);
+        }
+
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
 
-      // Get public URL
-      const { data: { publicUrl } } = supabase
-        .storage
-        .from(bucket)
-        .getPublicUrl(filePath);
-
-      return { 
-        path: filePath, 
-        url: publicUrl 
-      };
+      throw new Error(`Upload failed: ${lastError?.message || 'Unknown error'}`);
     } catch (error) {
       console.error('StorageService.uploadFile error:', error);
       throw error;
@@ -163,6 +175,14 @@ class StorageService {
 
 function getFileExtension(filename) {
   return filename.split('.').pop().toLowerCase();
+}
+
+function isRetryableStorageError(error) {
+  const status = Number(error?.statusCode || error?.status || 0);
+  if (status === 408 || status === 429) return true;
+  if (status >= 500 && status < 600) return true;
+  const message = String(error?.message || '').toLowerCase();
+  return message.includes('timeout') || message.includes('timed out') || message.includes('gateway');
 }
 
 module.exports = StorageService;

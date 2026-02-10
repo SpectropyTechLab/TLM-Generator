@@ -136,6 +136,8 @@ ${body}
     // Normalize common malformed math delimiters like "$$ $x ...$" -> "$$ x ... $$"
     // This prevents "Display math should end with $$" errors from mixed delimiters.
     text = text.replace(/\$\$\s*\$([\s\S]*?)\$/g, '$$ $1 $$');
+    // Escape unmatched single-dollar delimiters that can break pdflatex.
+    text = this.escapeUnbalancedInlineMath(text);
     if (!text) {
       return `\\begin{center}\\Large\\textbf{SPECTROPY-IIT FOUNDATION MENTOR'S MANUAL}\\end{center}\n\nNo content was generated.`;
     }
@@ -258,6 +260,44 @@ ${body}
       .replace(/\\\s*$/gm, '')
       // Normalize escaped quotes from model output.
       .replace(/\\"/g, '"');
+  }
+
+  /**
+   * Escape unmatched inline math delimiters to avoid "Missing $" errors.
+   * @private
+   */
+  static escapeUnbalancedInlineMath(text) {
+    const lines = String(text || '').split(/\r?\n/);
+    const result = lines.map((line) => {
+      let count = 0;
+      for (let i = 0; i < line.length; i += 1) {
+        const ch = line[i];
+        if (ch === '\\') {
+          i += 1;
+          continue;
+        }
+        if (ch === '$') {
+          if (line[i + 1] === '$') {
+            i += 1;
+            continue;
+          }
+          count += 1;
+        }
+      }
+      if (count % 2 === 0 || count === 0) return line;
+
+      // Replace the last unescaped single "$" with "\$" to balance the line.
+      for (let i = line.length - 1; i >= 0; i -= 1) {
+        if (line[i] !== '$') continue;
+        const prev = i > 0 ? line[i - 1] : '';
+        const next = i + 1 < line.length ? line[i + 1] : '';
+        if (prev === '\\' || next === '$') continue;
+        return `${line.slice(0, i)}\\$${line.slice(i + 1)}`;
+      }
+      return line;
+    });
+
+    return result.join('\n');
   }
 
   /**

@@ -69,6 +69,30 @@ function sanitizeLatexForPandoc(latexContent) {
   return text;
 }
 
+function sanitizeMarkdownForPandoc(markdownContent) {
+  let text = String(markdownContent || '');
+
+  // Remove common HTML/markdown artifacts.
+  text = text
+    .replace(/^\s*\{=html\}\s*$/gm, '')
+    .replace(/^\s*<!--\s*-->\s*$/gm, '')
+    .replace(/^!\[.*?\]\(.*?\)\s*(\{.*?\})?\s*$/gm, '');
+
+  // Prevent accidental emphasis from underscores in plain text.
+  // Keep underscores inside math segments intact by leaving $...$ blocks alone.
+  const mathRegex = /(\$\$[\s\S]*?\$\$|\$[^$]*?\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
+  const parts = text.split(mathRegex);
+  text = parts
+    .map((part) => {
+      if (!part) return '';
+      if (mathRegex.test(part)) return part;
+      return part.replace(/(?<!\\)_/g, '\\_');
+    })
+    .join('');
+
+  return text;
+}
+
 class DocxCompiler {
   static async compile(latexContent, worksheetId) {
     const pandocBin = process.env.PANDOC_BIN || 'pandoc';
@@ -81,10 +105,22 @@ class DocxCompiler {
       const latexDoc = PDFCompiler.buildLatexDocument(latexContent, '', worksheetId);
       const sanitizedLatex = sanitizeLatexForPandoc(latexDoc);
       await fs.writeFile(inputPath, sanitizedLatex, 'utf8');
-      await execFileAsync(pandocBin, ['--from=latex', '--to=docx', inputPath, '-o', outputPath], {
-        timeout: 120000,
-        windowsHide: true
-      });
+      try {
+        await execFileAsync(pandocBin, ['--from=latex', '--to=docx', inputPath, '-o', outputPath], {
+          timeout: 120000,
+          windowsHide: true
+        });
+      } catch (latexError) {
+        // Fallback: use markdown input to avoid Pandoc LaTeX reader edge cases.
+        const markdownPath = path.join(workDir, 'manual.md');
+        const markdownText = sanitizeMarkdownForPandoc(latexContent);
+        await fs.writeFile(markdownPath, markdownText, 'utf8');
+        await execFileAsync(
+          pandocBin,
+          ['--from=markdown+tex_math_dollars+raw_tex', '--to=docx', markdownPath, '-o', outputPath],
+          { timeout: 120000, windowsHide: true }
+        );
+      }
       const docxBuffer = await fs.readFile(outputPath);
       return docxBuffer;
     } finally {
