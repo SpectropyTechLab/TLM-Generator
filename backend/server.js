@@ -38,14 +38,15 @@ app.use(
           "'self'",
           'http://localhost:3000',
           'http://127.0.0.1:3000',
-          'https://spectropy-tlm-generator.vercel.app'
+          'https://spectropy-tlm-generator.vercel.app',
+          'https://tlm-generator.spectropy.com'
         ],
         frameSrc: [
           "'self'",
           'http://localhost:3000',
           'http://127.0.0.1:3000',
           'https://spectropy-tlm-generator.vercel.app',
-          'https://tlm-generator.vercel.app'
+          'https://tlm-generator.spectropy.com'
         ]
       }
     }
