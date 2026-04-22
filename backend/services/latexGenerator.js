@@ -5,6 +5,11 @@ const { WORKSHEET_CATEGORIES } = require('../utils/constants');
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const MAX_OUTPUT_TOKENS = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 8192);
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 90000);
+const GEMINI_MAX_RETRIES = Number(process.env.GEMINI_MAX_RETRIES || 3);
+const GEMINI_RETRY_BASE_MS = Number(process.env.GEMINI_RETRY_BASE_MS || 1500);
+const WORKSHEET_CHUNK_SIZE = Math.max(1, Number(process.env.WORKSHEET_CHUNK_SIZE || 8));
+const WORKSHEET_CHUNK_MAX_CHARS = Math.max(1000, Number(process.env.WORKSHEET_CHUNK_MAX_CHARS || 6500));
 const FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || '')
   .split(',')
   .map((m) => m.trim())
@@ -38,7 +43,7 @@ class LatexGenerator {
         if (process.env.GEMINI_FALLBACK === 'true') {
           return this.buildFallbackContent(input, program, subject, chapterName, category);
         }
-        throw new Error('Gemini quota exceeded. Check your API usage and billing.');
+        throw new Error(`Gemini quota exceeded or rate limited. ${this.getProviderErrorSummary(error)}`);
       }
       throw new Error(`Failed to generate LaTeX: ${error.message || 'Unknown error'}`);
     }
@@ -96,7 +101,7 @@ class LatexGenerator {
     const normalizedModel = modelName.startsWith('models/')
       ? modelName
       : `models/${modelName}`;
-    const response = await axios.post(
+    const response = await this.postWithRetries(
       `https://generativelanguage.googleapis.com/v1beta/${normalizedModel}:generateContent`,
       {
         contents: [
@@ -115,7 +120,7 @@ class LatexGenerator {
           'x-goog-api-key': GEMINI_API_KEY,
           'content-type': 'application/json'
         },
-        timeout: 90000
+        timeout: GEMINI_TIMEOUT_MS
       }
     );
 
@@ -124,6 +129,29 @@ class LatexGenerator {
         ?.map((part) => part?.text || '')
         .join('') || ''
     );
+  }
+
+  static async postWithRetries(url, body, config) {
+    let lastError;
+
+    for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt += 1) {
+      try {
+        return await axios.post(url, body, config);
+      } catch (error) {
+        lastError = error;
+        if (!this.isRetryableGenerationError(error) || attempt === GEMINI_MAX_RETRIES) {
+          throw error;
+        }
+
+        const waitMs = this.getRetryDelayMs(error, attempt);
+        console.warn(
+          `Gemini request failed with status ${error?.response?.status || error?.status || 'unknown'}; retrying in ${waitMs}ms (attempt ${attempt + 1}/${GEMINI_MAX_RETRIES}).`
+        );
+        await this.sleep(waitMs);
+      }
+    }
+
+    throw lastError;
   }
 
   static buildPrompt({ rawText, program, subject, chapterName, category }) {
@@ -367,7 +395,10 @@ Keep the question intent, order, and coverage while adding key and solution.`;
     let currentLength = 0;
     for (const block of blocks) {
       const blockLength = block.length + 2;
-      if (current.length > 0 && (current.length >= 8 || currentLength + blockLength > 6500)) {
+      if (
+        current.length > 0 &&
+        (current.length >= WORKSHEET_CHUNK_SIZE || currentLength + blockLength > WORKSHEET_CHUNK_MAX_CHARS)
+      ) {
         chunks.push(current.join('\n\n'));
         current = [];
         currentLength = 0;
@@ -379,7 +410,7 @@ Keep the question intent, order, and coverage while adding key and solution.`;
       chunks.push(current.join('\n\n'));
     }
 
-    return chunks.length > 0 ? chunks : this.chunkByLength(source, 5500);
+    return chunks.length > 0 ? chunks : this.chunkByLength(source, Math.min(WORKSHEET_CHUNK_MAX_CHARS, 5500));
   }
 
   static chunkByLength(text, maxLength) {
@@ -538,6 +569,44 @@ Solution:
     if (!text) return 0;
     const matches = text.match(/(^|\n)\s*(?:Q\s*)?(\d+)[\.\)]\s+/gi);
     return matches ? matches.length : 0;
+  }
+
+  static isRetryableGenerationError(error) {
+    const status = Number(error?.status || error?.response?.status || 0);
+    if (status === 429) return true;
+    if (status >= 500 && status < 600) return true;
+
+    const message = String(error?.message || '').toLowerCase();
+    return (
+      message.includes('timeout') ||
+      message.includes('timed out') ||
+      message.includes('socket hang up') ||
+      message.includes('econnreset') ||
+      message.includes('etimedout')
+    );
+  }
+
+  static getRetryDelayMs(error, attempt) {
+    const retryAfterHeader = error?.response?.headers?.['retry-after'];
+    const retryAfterSeconds = Number(retryAfterHeader);
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+      return retryAfterSeconds * 1000;
+    }
+
+    return GEMINI_RETRY_BASE_MS * (2 ** attempt);
+  }
+
+  static getProviderErrorSummary(error) {
+    const providerMessage =
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.error?.status ||
+      error?.message ||
+      'Unknown provider error';
+    return String(providerMessage);
+  }
+
+  static sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   static resolveWorksheetTitle(program, subject, chapterName) {
