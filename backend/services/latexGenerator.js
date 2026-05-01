@@ -1,6 +1,7 @@
 const axios = require('axios');
 require('dotenv').config();
 const { WORKSHEET_CATEGORIES } = require('../utils/constants');
+const geminiScheduler = require('./geminiScheduler');
 
 const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -8,6 +9,7 @@ const MAX_OUTPUT_TOKENS = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 8192);
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 90000);
 const GEMINI_MAX_RETRIES = Number(process.env.GEMINI_MAX_RETRIES || 3);
 const GEMINI_RETRY_BASE_MS = Number(process.env.GEMINI_RETRY_BASE_MS || 1500);
+const GEMINI_RETRY_MAX_MS = Number(process.env.GEMINI_RETRY_MAX_MS || 60000);
 const WORKSHEET_CHUNK_SIZE = Math.max(1, Number(process.env.WORKSHEET_CHUNK_SIZE || 8));
 const WORKSHEET_CHUNK_MAX_CHARS = Math.max(1000, Number(process.env.WORKSHEET_CHUNK_MAX_CHARS || 6500));
 const FALLBACK_MODELS = (process.env.GEMINI_FALLBACK_MODELS || '')
@@ -101,6 +103,7 @@ class LatexGenerator {
     const normalizedModel = modelName.startsWith('models/')
       ? modelName
       : `models/${modelName}`;
+    const requestLabel = normalizedModel.replace(/^models\//, '');
     const response = await this.postWithRetries(
       `https://generativelanguage.googleapis.com/v1beta/${normalizedModel}:generateContent`,
       {
@@ -121,6 +124,9 @@ class LatexGenerator {
           'content-type': 'application/json'
         },
         timeout: GEMINI_TIMEOUT_MS
+      },
+      {
+        label: requestLabel
       }
     );
 
@@ -131,12 +137,15 @@ class LatexGenerator {
     );
   }
 
-  static async postWithRetries(url, body, config) {
+  static async postWithRetries(url, body, config, metadata = {}) {
     let lastError;
 
     for (let attempt = 0; attempt <= GEMINI_MAX_RETRIES; attempt += 1) {
       try {
-        return await axios.post(url, body, config);
+        return await geminiScheduler.schedule(
+          () => axios.post(url, body, config),
+          metadata
+        );
       } catch (error) {
         lastError = error;
         if (!this.isRetryableGenerationError(error) || attempt === GEMINI_MAX_RETRIES) {
@@ -590,10 +599,17 @@ Solution:
     const retryAfterHeader = error?.response?.headers?.['retry-after'];
     const retryAfterSeconds = Number(retryAfterHeader);
     if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
-      return retryAfterSeconds * 1000;
+      return this.capRetryDelayMs(retryAfterSeconds * 1000);
     }
 
-    return GEMINI_RETRY_BASE_MS * (2 ** attempt);
+    return this.capRetryDelayMs(GEMINI_RETRY_BASE_MS * (2 ** attempt));
+  }
+
+  static capRetryDelayMs(delayMs) {
+    if (!Number.isFinite(GEMINI_RETRY_MAX_MS) || GEMINI_RETRY_MAX_MS <= 0) {
+      return Math.max(0, delayMs);
+    }
+    return Math.min(Math.max(0, delayMs), GEMINI_RETRY_MAX_MS);
   }
 
   static getProviderErrorSummary(error) {

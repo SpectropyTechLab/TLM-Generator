@@ -3,6 +3,7 @@ const StorageService = require('../services/storageService');
 const FileExtractor = require('../services/fileExtractor');
 const LatexGenerator = require('../services/latexGenerator');
 const DocxCompiler = require('../services/docxCompiler');
+const worksheetProcessingQueue = require('../services/worksheetProcessingQueue');
 const { 
   generateWorksheetId, 
   getFileExtension
@@ -89,24 +90,28 @@ class WorksheetController {
         throw error;
       }
 
-      // Start background processing
-      WorksheetController.processWorksheet(
-        worksheetId,
-        file.buffer,
-        fileType,
-        program,
-        subject,
-        String(chapterName).trim(),
-        String(category)
-      )
-        .catch(err => {
-          console.error(`Background processing failed for ${worksheetId}:`, err);
+      // Queue background processing so concurrent uploads do not hit Gemini all at once.
+      worksheetProcessingQueue
+        .enqueue({
+          worksheetId,
+          task: () => WorksheetController.processWorksheet(
+            worksheetId,
+            file.buffer,
+            fileType,
+            program,
+            subject,
+            String(chapterName).trim(),
+            String(category)
+          )
+        })
+        .catch((err) => {
+          console.error(`Queued processing failed for ${worksheetId}:`, err);
         });
 
       res.status(201).json({
         success: true,
         worksheetId: worksheetId,
-        message: 'Worksheet uploaded successfully. Processing started.'
+        message: 'Worksheet uploaded successfully. Processing queued.'
       });
 
     } catch (error) {

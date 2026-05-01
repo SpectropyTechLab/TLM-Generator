@@ -5,6 +5,8 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 const { execSync } = require('child_process');
+const worksheetProcessingQueue = require('./services/worksheetProcessingQueue');
+const geminiScheduler = require('./services/geminiScheduler');
 
 // Import routes
 const apiRoutes = require('./routes');
@@ -21,10 +23,10 @@ if (process.env.LATEX_USE_LOCAL === 'true') {
     const cmd = process.platform === 'win32' ? 'where pdflatex' : 'which pdflatex';
     const output = execSync(cmd, { stdio: 'pipe' }).toString().trim();
     if (output) {
-      console.log(`✅ pdflatex found: ${output.split(/\r?\n/)[0]}`);
+      console.log(`pdflatex found: ${output.split(/\r?\n/)[0]}`);
     }
   } catch (error) {
-    console.warn('⚠️  pdflatex not found on PATH. Local LaTeX compilation will fail.');
+    console.warn('pdflatex not found on PATH. Local LaTeX compilation will fail.');
   }
 }
 
@@ -51,47 +53,46 @@ app.use(
       }
     }
   })
-); // Security headers
-app.use(cors()); // Enable CORS
-app.use(express.json({ limit: '10mb' })); // Parse JSON
-app.use(express.urlencoded({ extended: true, limit: '10mb' })); // Parse URL-encoded
+);
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging (development only)
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
 
-// Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
-// API routes
 app.use('/api', apiRoutes);
 
 // Static files (if needed)
 // app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// 404 handler
 app.use((req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     error: 'Route not found',
     path: req.path
   });
 });
 
-// Global error handler (must be last)
 app.use(errorHandler);
 
-// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`💾 Database: ${process.env.SUPABASE_URL ? 'Connected' : 'Not configured'}`);
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Database: ${process.env.SUPABASE_URL ? 'Connected' : 'Not configured'}`);
+  console.log(
+    `[worksheet-processing] concurrency=${worksheetProcessingQueue.getStats().concurrency}`
+  );
+  console.log(
+    `[gemini] concurrency=${geminiScheduler.getStats().concurrency}, minIntervalMs=${process.env.GEMINI_MIN_INTERVAL_MS || 1500}`
+  );
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
   process.exit(0);
